@@ -1,0 +1,29 @@
+import dotenv from "dotenv";
+
+dotenv.config();
+
+function getEnv(name: string, defaultValue?: string): string {
+  const value = process.env[name] ?? defaultValue;
+
+  if (value === undefined || value === "") {
+    throw new Error(`Variável de ambiente obrigatória não definida: ${name}`);
+  }
+
+  return value;
+}
+
+export const env = {
+  nodeEnv: getEnv("NODE_ENV", "development"),
+
+  port: Number(getEnv("PORT", "3000")),
+
+  logLevel: getEnv("LOG_LEVEL", "info"),
+
+  database: {
+    host: getEnv("DB_HOST", "localhost"),
+    port: Number(getEnv("DB_PORT", "5432")),
+    name: getEnv("DB_NAME", "algamar"),
+    user: getEnv("DB_USER", "postgres"),
+    password: getEnv("DB_PASSWORD", "postgres"),
+  },
+};
