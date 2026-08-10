@@ -18,7 +18,7 @@ app.get("/", (_request, response) => {
   response.status(200).json({
     success: true,
     system: "Algamar",
-    message: "API do Algamar está funcionando.",
+    message: "API do Algamar está online na porta " + process.env.PORT + ".",
   });
 });
 
