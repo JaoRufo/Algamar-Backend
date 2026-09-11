@@ -3,6 +3,8 @@ import { Router } from "express";
 import { database } from "../config/database.js";
 import { logger } from "../logger/logger.js";
 
+import mlRoutes from "./ml.routes.js";
+
 const router = Router();
 
 router.get("/health", async (_request, response) => {
@@ -49,5 +51,7 @@ router.get("/health", async (_request, response) => {
     });
   }
 });
+
+router.use("/ml", mlRoutes);
 
 export default router;

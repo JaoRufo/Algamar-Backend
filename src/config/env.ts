@@ -26,4 +26,8 @@ export const env = {
     user: getEnv("DB_USER", "postgres"),
     password: getEnv("DB_PASSWORD", "postgres"),
   },
+
+  ml: {
+    apiUrl: getEnv("ML_API_URL", "http://127.0.0.1:8000"),
+  },
 };
