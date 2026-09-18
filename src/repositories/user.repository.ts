@@ -54,6 +54,29 @@ export class UserRepository {
     const { passwordHash: _passwordHash, ...publicUser } = user;
     return publicUser;
   }
+
+  async update(
+    id: string,
+    fullName: string | null,
+    email: string | null,
+    passwordHash: string | null,
+  ): Promise<PublicUser | null> {
+    const result = await database.query<UserRow>(
+      "UPDATE users SET full_name = COALESCE($1, full_name), email = COALESCE($2, email), password_hash = COALESCE($3, password_hash), updated_at = NOW() WHERE id = $4 RETURNING id, full_name, email, password_hash, created_at",
+      [fullName, email, passwordHash, id],
+    );
+    if (!result.rows[0]) return null;
+    const user = mapUser(result.rows[0]);
+    const { passwordHash: _passwordHash, ...publicUser } = user;
+    return publicUser;
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await database.query("DELETE FROM users WHERE id = $1", [
+      id,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+  }
 }
 
 export const userRepository = new UserRepository();

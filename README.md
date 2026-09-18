@@ -196,10 +196,13 @@ Os valores dessas variáveis devem ser definidos no ambiente de execução. O ar
 
 - `POST /api/auth/register`: cria um usuário.
 - `POST /api/auth/login`: autentica um usuário e retorna um token.
+- `PUT /api/auth/me`: edita o usuário autenticado.
+- `DELETE /api/auth/me`: exclui o usuário autenticado.
 - `GET /api/health`: verifica a disponibilidade da aplicação e do banco.
 - `GET /api/ml/coastal-risks`: sincroniza, persiste e retorna os riscos costeiros e suas tendências.
 
-As rotas de autenticação são públicas. As demais exigem autenticação.
+As rotas de cadastro e login são públicas. As operações de edição e exclusão
+exigem autenticação.
 
 A rota de riscos aceita filtros opcionais por região, nível de risco e mês. O retorno contém resumo geral, tendências históricas, filtros aplicados e pontos enriquecidos.
 
