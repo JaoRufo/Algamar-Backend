@@ -8,9 +8,10 @@ import { health } from "../controllers/health.controller.js";
 const router = Router();
 
 router.use("/auth", authRoutes);
-router.use(authenticateToken);
 
 router.get("/health", health);
+
+router.use(authenticateToken);
 
 router.use("/ml", mlRoutes);
 
