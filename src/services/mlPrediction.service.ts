@@ -223,7 +223,7 @@ async function persist(points: EnrichedPoint[]): Promise<string> {
   try {
     await client.query("BEGIN");
     const batch = await client.query<{ id: string }>(
-      "INSERT INTO prediction_batches (model_version, source_hash) VALUES ($1, $2) ON CONFLICT (source_hash) DO NOTHING RETURNING id",
+      "INSERT INTO prediction_batches (model_version, source_hash) VALUES ($1, $2) ON CONFLICT (source_hash) WHERE source_hash IS NOT NULL DO NOTHING RETURNING id",
       [points[0]?.model_version ?? "v1.0", sourceHash],
     );
     let batchRow = batch.rows[0];
