@@ -1,4 +1,6 @@
 import http from "http";
+import https from "https";
+import { createHash } from "crypto";
 import { database } from "../config/database.js";
 import { env } from "../config/env.js";
 import { EnrichedPoint } from "../entities/prediction.entity.js";
@@ -178,7 +180,8 @@ function filterPoints(
 }
 function fetchPythonApi(url: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const request = http.get(url, (response) => {
+    const transport = new URL(url).protocol === "https:" ? https : http;
+    const request = transport.get(url, (response) => {
       let data = "";
       response.on("data", (chunk) => {
         data += chunk;
@@ -206,21 +209,38 @@ function fetchPythonApi(url: string): Promise<unknown> {
     request.on("error", reject);
   });
 }
+function getSourceHash(points: EnrichedPoint[]): string {
+  const stablePoints = [...points].sort((first, second) =>
+    first.id.localeCompare(second.id),
+  );
+  return createHash("sha256")
+    .update(JSON.stringify(stablePoints))
+    .digest("hex");
+}
 async function persist(points: EnrichedPoint[]): Promise<string> {
+  const sourceHash = getSourceHash(points);
   const client = await database.connect();
   try {
     await client.query("BEGIN");
     const batch = await client.query<{ id: string }>(
-      "INSERT INTO prediction_batches (model_version) VALUES ($1) RETURNING id",
-      [points[0]?.model_version ?? "v1.0"],
+      "INSERT INTO prediction_batches (model_version, source_hash) VALUES ($1, $2) ON CONFLICT (source_hash) DO NOTHING RETURNING id",
+      [points[0]?.model_version ?? "v1.0", sourceHash],
     );
-    const batchRow = batch.rows[0];
+    let batchRow = batch.rows[0];
+    if (!batchRow) {
+      const existingBatch = await client.query<{ id: string }>(
+        "SELECT id FROM prediction_batches WHERE source_hash = $1",
+        [sourceHash],
+      );
+      batchRow = existingBatch.rows[0];
+    }
     if (!batchRow)
       throw new Error("Não foi possível criar o lote de predições.");
-    for (const point of points)
-      await client.query(
-        "INSERT INTO predictions (batch_id, external_id, latitude, longitude, region, prediction_year, prediction_month, probability, risk_level, temperature_celsius, chlorophyll_mg_m3, salinity_psu, model_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
-        [
+    if (batch.rows[0]) {
+      const values: unknown[] = [];
+      const rows = points.map((point, index) => {
+        const offset = index * 13;
+        values.push(
           batchRow.id,
           point.id,
           point.latitude,
@@ -234,8 +254,18 @@ async function persist(points: EnrichedPoint[]): Promise<string> {
           point.environmental_factors.chlorophyll_mg_m3,
           point.environmental_factors.salinity_psu,
           point.model_version,
-        ],
+        );
+        return `(${Array.from({ length: 13 }, (_, valueIndex) => `$${offset + valueIndex + 1}`).join(",")})`;
+      });
+      await client.query(
+        `INSERT INTO predictions (batch_id, external_id, latitude, longitude, region, prediction_year, prediction_month, probability, risk_level, temperature_celsius, chlorophyll_mg_m3, salinity_psu, model_version) VALUES ${rows.join(",")}`,
+        values,
       );
+    }
+    await client.query(
+      "DELETE FROM prediction_batches WHERE created_at < NOW() - ($1 * INTERVAL '1 day') OR id NOT IN (SELECT id FROM prediction_batches ORDER BY created_at DESC LIMIT $2)",
+      [env.ml.historyRetentionDays, env.ml.maxHistoryBatches],
+    );
     await client.query("COMMIT");
     return String(batchRow.id);
   } catch (error) {
@@ -245,9 +275,25 @@ async function persist(points: EnrichedPoint[]): Promise<string> {
     client.release();
   }
 }
-async function historical(): Promise<EnrichedPoint[]> {
+async function historical(filters: QueryFilters): Promise<EnrichedPoint[]> {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  if (filters.region) {
+    values.push(filters.region);
+    conditions.push(`LOWER(region) = LOWER($${values.length})`);
+  }
+  if (filters.riskLevel) {
+    values.push(filters.riskLevel);
+    conditions.push(`risk_level = $${values.length}`);
+  }
+  if (filters.month !== undefined) {
+    values.push(filters.month);
+    conditions.push(`prediction_month = $${values.length}`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const result = await database.query(
-    "SELECT external_id, latitude, longitude, region, prediction_year, prediction_month, probability, risk_level, temperature_celsius, chlorophyll_mg_m3, salinity_psu, model_version FROM predictions ORDER BY created_at ASC",
+    `SELECT external_id, latitude, longitude, region, prediction_year, prediction_month, probability, risk_level, temperature_celsius, chlorophyll_mg_m3, salinity_psu, model_version FROM predictions ${where} ORDER BY created_at ASC`,
+    values,
   );
   return result.rows.map((row) => ({
     id: String(row.external_id),
@@ -272,9 +318,7 @@ async function historical(): Promise<EnrichedPoint[]> {
 }
 
 export class MlPredictionService {
-  async getCoastalRisks(
-    filters: QueryFilters,
-  ): Promise<{
+  async getCoastalRisks(filters: QueryFilters): Promise<{
     points: EnrichedPoint[];
     history: EnrichedPoint[];
     batchId: string;
@@ -294,7 +338,7 @@ export class MlPredictionService {
     const batchId = await persist(points);
     return {
       points: filterPoints(points, filters),
-      history: filterPoints(await historical(), filters),
+      history: await historical(filters),
       batchId,
     };
   }

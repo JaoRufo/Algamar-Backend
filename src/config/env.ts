@@ -25,10 +25,13 @@ export const env = {
     name: getEnv("DB_NAME", "algamar"),
     user: getEnv("DB_USER", "postgres"),
     password: getEnv("DB_PASSWORD", "postgres"),
+    poolMax: Number(getEnv("DB_POOL_MAX", "5")),
   },
 
   ml: {
     apiUrl: getEnv("ML_API_URL", "http://127.0.0.1:8000"),
+    historyRetentionDays: Number(getEnv("ML_HISTORY_RETENTION_DAYS", "90")),
+    maxHistoryBatches: Number(getEnv("ML_MAX_HISTORY_BATCHES", "1000")),
   },
 
   auth: {

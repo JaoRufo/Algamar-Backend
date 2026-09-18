@@ -9,7 +9,7 @@ export const database = new Pool({
   database: env.database.name,
   user: env.database.user,
   password: env.database.password,
-  max: 10,
+  max: env.database.poolMax,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
 });
@@ -105,11 +105,22 @@ export async function initializeDatabase(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    ALTER TABLE prediction_batches
+      ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS prediction_batches_source_hash_idx
+      ON prediction_batches (source_hash)
+      WHERE source_hash IS NOT NULL;
+
     CREATE INDEX IF NOT EXISTS predictions_period_idx
       ON predictions (prediction_year, prediction_month);
     CREATE INDEX IF NOT EXISTS predictions_risk_idx
       ON predictions (risk_level);
     CREATE INDEX IF NOT EXISTS predictions_region_idx
       ON predictions (region);
+    CREATE INDEX IF NOT EXISTS predictions_batch_id_idx
+      ON predictions (batch_id);
+    CREATE INDEX IF NOT EXISTS predictions_created_at_idx
+      ON predictions (created_at);
   `);
 }

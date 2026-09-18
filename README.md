@@ -166,7 +166,9 @@ Consulta do histórico
 Tendências e resposta consolidada
 ```
 
-A cada consulta bem-sucedida da rota de riscos, um novo lote é registrado. Dessa forma, o histórico representa as sincronizações realizadas ao longo do tempo.
+A rota de riscos registra um novo lote somente quando o conteúdo normalizado recebido da API Python é diferente do último conteúdo persistido. Dessa forma, o histórico representa mudanças reais nas sincronizações, sem repetir indefinidamente os mesmos pontos.
+
+Para evitar crescimento desnecessário, o backend calcula um hash do lote normalizado. Se a API Python retornar exatamente os mesmos dados, o lote existente é reutilizado e nenhum ponto é inserido novamente. Lotes antigos também podem ser removidos automaticamente pelas configurações `ML_HISTORY_RETENTION_DAYS` e `ML_MAX_HISTORY_BATCHES`.
 
 ## Segurança e configuração
 
