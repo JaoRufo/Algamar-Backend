@@ -1,426 +1,219 @@
-# 🌊 Algamar Backend
+# Algamar Backend
 
-Backend do sistema **Algamar**, desenvolvido como projeto acadêmico para a disciplina de **Análise e Projeto de Sistemas II**.
+Backend responsável por receber, organizar, validar e disponibilizar os dados do sistema Algamar. A aplicação funciona como uma camada intermediária entre a API de Machine Learning em Python, o banco de dados PostgreSQL e os consumidores da API.
 
-O Algamar tem como objetivo estruturar e disponibilizar informações relacionadas à **florações de algas tóxicas na costa brasileira**, com foco em **monitoramento preditivo de impactos ambientais e riscos à saúde pública**, utilizando dados reais obtidos por meio da pesquisa e coleta realizada pela equipe do projeto.
+## Responsabilidades
 
-> 🚧 **Status atual:** estrutura inicial do backend. A modelagem definitiva do banco de dados e as funcionalidades de negócio serão definidas posteriormente, após a coleta, análise e validação dos dados da pesquisa.
+- Expor uma API HTTP para o sistema Algamar.
+- Autenticar usuários e proteger as rotas internas.
+- Consultar a API Python de Machine Learning.
+- Combinar predições com dados ambientais marinhos.
+- Normalizar formatos recebidos de fontes externas.
+- Classificar pontos por região e nível de risco.
+- Persistir o histórico das sincronizações e das predições.
+- Calcular resumos e tendências históricas.
+- Disponibilizar dados consistentes para mapas, tabelas e indicadores.
 
----
+O backend não executa o modelo de Machine Learning. A responsabilidade pela geração das predições permanece com o serviço Python.
 
-## 📚 Sobre o Projeto
-
-O **Algamar** é um projeto desenvolvido por uma equipe de 8 integrantes como parte da disciplina de **Análise e Projeto de Sistemas II**.
-
-O projeto possui caráter de pesquisa e desenvolvimento de software, tendo como requisito fundamental a utilização de **dados reais**, evitando informações fictícias ou dados criados exclusivamente para demonstração.
-
-A aplicação será desenvolvida para organizar, processar e disponibilizar os dados coletados pela equipe, permitindo futuramente sua visualização e utilização por meio de uma interface frontend.
-
-O backend será responsável por:
-
-- disponibilizar uma API;
-- realizar a comunicação com o banco de dados;
-- processar os dados coletados;
-- fornecer informações para o frontend;
-- aplicar regras de negócio;
-- realizar validações;
-- registrar logs das operações;
-- garantir uma estrutura preparada para expansão;
-- permitir futura implantação em infraestrutura de nuvem.
-
----
-
-# 🏗️ Arquitetura
-
-A aplicação está sendo estruturada utilizando uma arquitetura separada entre frontend, backend e banco de dados.
+## Arquitetura
 
 ```text
-┌──────────────────────────────┐
-│           FRONTEND           │
-│                              │
-│ Vue + Quasar                 │
-│                              │
-│ Interface do sistema         │
-└──────────────┬───────────────┘
-               │
-               │ HTTP / REST API
-               │
-               ▼
-┌──────────────────────────────┐
-│           BACKEND            │
-│                              │
-│ Node.js + TypeScript         │
-│ Express                      │
-│                              │
-│ Regras de negócio            │
-│ Validações                   │
-│ API                          │
-│ Logs                         │
-└──────────────┬───────────────┘
-               │
-               │ PostgreSQL
-               │
-               ▼
-┌──────────────────────────────┐
-│          DATABASE            │
-│                              │
-│ PostgreSQL                   │
-│                              │
-│ Dados reais da pesquisa      │
-└──────────────────────────────┘
-💻 Tecnologias
-Backend
-Node.js
-TypeScript
-Express
+API Python de Machine Learning
+        |
+        | predições e dados marinhos
+        v
+Backend Algamar
+        |
+        | validação, enriquecimento e regras de negócio
+        v
 PostgreSQL
-Pino
-Pino Pretty
-dotenv
-CORS
-Desenvolvimento
-WSL
-Visual Studio Code
-Git
-GitHub
-Futuro ambiente de produção
-O backend e o banco de dados serão posteriormente preparados para execução em infraestrutura de nuvem, com previsão de utilização da Oracle Cloud.
-📁 Estrutura do Projeto
-algamar-backend/
-│
-├── src/
-│   │
-│   ├── config/
-│   │   ├── database.ts
-│   │   └── env.ts
-│   │
-│   ├── logger/
-│   │   └── logger.ts
-│   │
-│   ├── middlewares/
-│   │   ├── errorHandler.ts
-│   │   └── requestLogger.ts
-│   │
-│   ├── routes/
-│   │   └── index.ts
-│   │
-│   ├── app.ts
-│   └── server.ts
-│
-├── scripts/
-│   ├── db-start.sh
-│   ├── db-stop.sh
-│   ├── db-status.sh
-│   └── db-reset.sh
-│
-├── .env
-├── .env.example
-├── .gitignore
-├── package.json
-├── package-lock.json
-├── tsconfig.json
-├── start.sh
-├── stop.sh
-├── restart.sh
-├── status.sh
-└── README.md
-⚙️ Requisitos
-Para executar o backend localmente, é necessário possuir:
-Node.js
-npm
-PostgreSQL
-WSL 2
-Git
-Visual Studio Code
-O desenvolvimento do backend é realizado dentro do WSL, utilizando o Visual Studio Code com a extensão de integração com Linux/WSL.
-🚀 Instalação
-Clone o repositório:
-git clone URL_DO_REPOSITORIO
-Entre na pasta:
-cd algamar-backend
-Instale as dependências:
-npm install
-🔐 Variáveis de Ambiente
-O projeto utiliza variáveis de ambiente para configuração.
-Crie o arquivo .env a partir do exemplo:
-cp .env.example .env
-Configure o arquivo .env:
-NODE_ENV=development
-PORT=3000
-
-LOG_LEVEL=debug
-
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=algamar
-DB_USER=postgres
-DB_PASSWORD=
-Variáveis
-Variável	Descrição
-NODE_ENV	Ambiente de execução
-PORT	Porta utilizada pelo backend
-LOG_LEVEL	Nível mínimo dos logs
-DB_HOST	Host do PostgreSQL
-DB_PORT	Porta do PostgreSQL
-DB_NAME	Nome do banco
-DB_USER	Usuário do PostgreSQL
-DB_PASSWORD	Senha do PostgreSQL
-
-
-⚠️ O arquivo .env contém informações de configuração local e não deve ser enviado para o GitHub.
-
-O arquivo .env.example deve permanecer no repositório como referência para configuração do ambiente.
-🗄️ Banco de Dados
-O projeto utiliza PostgreSQL.
-Configuração inicial:
-Host:     localhost
-Port:     5432
-Database: algamar
-User:     postgres
-Neste estágio inicial, o banco de dados permanece propositalmente sem tabelas e sem estrutura definitiva.
-Isso ocorre porque a modelagem será realizada posteriormente, após:
-coleta dos dados da pesquisa;
-análise dos dados;
-definição das informações relevantes;
-identificação das entidades;
-definição dos relacionamentos;
-validação das informações pela equipe.
-Dessa forma, evita-se criar uma estrutura de banco baseada em dados fictícios ou em suposições antes da conclusão da pesquisa.
-▶️ Executando o Projeto
-O projeto possui scripts para facilitar o desenvolvimento.
-Iniciar o Algamar
-./start.sh
-O comando:
-verifica o PostgreSQL;
-inicia o PostgreSQL caso necessário;
-inicia o backend;
-disponibiliza a API;
-mantém os logs em tempo real no terminal.
-🛑 Encerrando o Algamar
-Durante o desenvolvimento, basta pressionar:
-CTRL + C
-O sistema realizará o encerramento dos serviços.
-Fluxo:
-CTRL + C
-     │
-     ▼
-Backend encerrado
-     │
-     ▼
-PostgreSQL encerrado
-🔄 Reiniciar
-Para reiniciar o ambiente:
-./restart.sh
-📊 Verificar Status
-Para verificar o ambiente:
-./status.sh
-O comando apresenta informações relacionadas ao ambiente de desenvolvimento e ao PostgreSQL.
-🐘 PostgreSQL
-Também é possível controlar o PostgreSQL individualmente.
-Iniciar
-./scripts/db-start.sh
-Parar
-./scripts/db-stop.sh
-Verificar status
-./scripts/db-status.sh
-Reset
-./scripts/db-reset.sh
-⚠️ O script de reset ainda não realiza alterações no banco. Ele existe como preparação para futuras necessidades de desenvolvimento.
-
-🧪 Desenvolvimento
-Durante o desenvolvimento, o backend utiliza o modo de execução com tsx watch.
-Para iniciar somente o servidor:
-npm run dev
-🔍 Verificação do TypeScript
-Para verificar possíveis erros no código:
-npm run check
-📦 Build
-Para gerar a versão compilada:
-npm run build
-Os arquivos compilados serão gerados no diretório:
-dist/
-▶️ Executar Build
-Após realizar o build:
-npm start
-🌐 API
-A API atualmente possui uma estrutura inicial para testes.
-Servidor:
-http://localhost:3000
-❤️ Health Check
-O endpoint de health check permite verificar o funcionamento do backend e a comunicação com o PostgreSQL.
-Endpoint:
-GET /api/health
-Teste utilizando:
-curl http://localhost:3000/api/health
-Exemplo de resposta:
-{
-  "success": true,
-  "system": "Algamar",
-  "status": "online",
-  "database": {
-    "status": "online",
-    "serverTime": "2026-08-10T00:00:00.000Z"
-  }
-}
-O endpoint é utilizado inicialmente para verificar:
-disponibilidade da API;
-funcionamento do servidor;
-conexão com o PostgreSQL;
-execução de consultas no banco.
-📋 Logs
-O backend utiliza Pino como sistema de logging e Pino Pretty para apresentação dos logs durante o desenvolvimento.
-Os logs permitem acompanhar o funcionamento do sistema em tempo real.
-São registrados eventos como:
-inicialização do servidor;
-configuração do ambiente;
-conexão com PostgreSQL;
-erros de banco de dados;
-requests HTTP;
-responses HTTP;
-tempo de execução;
-consultas ao banco;
-encerramento do servidor;
-erros inesperados.
-🆔 Request ID
-Cada requisição HTTP recebe um identificador único.
-Exemplo:
-REQUEST
-requestId: 8b3a1f...
-GET /api/health
-E posteriormente:
-RESPONSE
-requestId: 8b3a1f...
-200
-3.42ms
-O mesmo identificador permite relacionar diferentes eventos pertencentes à mesma requisição.
-Além disso, o ID é disponibilizado através do header:
-X-Request-ID
-📈 Níveis de Log
-O projeto permite configurar o nível de detalhamento através de:
-LOG_LEVEL=debug
-Os principais níveis utilizados são:
-debug
-info
-warn
-error
-fatal
-Durante o desenvolvimento, o nível debug permite acompanhar informações mais detalhadas.
-Em ambientes de produção, o nível poderá ser ajustado conforme a necessidade.
-🔒 Segurança dos Logs
-Informações sensíveis não devem ser registradas nos logs.
-Por exemplo, a senha do PostgreSQL:
-DB_PASSWORD
-nunca deve aparecer nos logs.
-Também deve ser evitado o registro indiscriminado de dados pessoais ou informações sensíveis provenientes dos dados da pesquisa.
-🧪 Estado Atual
-O projeto encontra-se na fase inicial de desenvolvimento.
-Atualmente estão implementados:
-estrutura inicial do backend;
-servidor Express;
-TypeScript;
-configuração por variáveis de ambiente;
-conexão com PostgreSQL;
-pool de conexões;
-health check;
-middleware de requests;
-tratamento inicial de erros;
-sistema de logs;
-Request ID;
-scripts de inicialização;
-scripts de gerenciamento do PostgreSQL;
-estrutura preparada para expansão.
-Ainda não estão implementados:
-modelagem definitiva do banco;
-tabelas de dados;
-entidades;
-regras de negócio definitivas;
-autenticação;
-autorização;
-endpoints relacionados aos dados da pesquisa;
-funcionalidades definitivas do frontend.
-Essas funcionalidades serão definidas conforme a pesquisa e a coleta de dados avançarem.
-🔬 Pesquisa e Dados Reais
-Um dos principais requisitos do projeto é trabalhar com dados reais.
-Consequentemente, as estruturas de dados do sistema não devem ser criadas simplesmente com informações fictícias para preencher o banco.
-A definição das entidades, atributos e relacionamentos deverá considerar os dados efetivamente coletados e validados pela equipe responsável pela pesquisa.
-O fluxo esperado é:
-Pesquisa
-   │
-   ▼
-Coleta de dados reais
-   │
-   ▼
-Validação
-   │
-   ▼
-Análise
-   │
-   ▼
-Modelagem dos dados
-   │
-   ▼
-Banco PostgreSQL
-   │
-   ▼
-API
-   │
-   ▼
-Frontend
-🧩 Desenvolvimento Futuro
-Conforme o projeto evoluir, o backend deverá receber novos módulos.
-Possíveis etapas:
-1. Coleta dos dados
-        ↓
-2. Análise dos dados
-        ↓
-3. Modelagem do banco
-        ↓
-4. Criação das migrations
-        ↓
-5. Criação das entidades
-        ↓
-6. Repositories
-        ↓
-7. Services
-        ↓
-8. Controllers
-        ↓
-9. Rotas
-        ↓
-10. Validações
-        ↓
-11. Integração com frontend
-        ↓
-12. Testes
-        ↓
-13. Deploy
-A arquitetura deverá ser mantida modular para permitir a evolução do projeto sem necessidade de grandes alterações estruturais.
-☁️ Deploy
-O ambiente atual é local:
-Windows
-   │
-   └── WSL
-        │
-        ├── Node.js
-        ├── TypeScript
-        └── PostgreSQL
-Posteriormente, o projeto será preparado para execução em ambiente de nuvem.
-A infraestrutura planejada atualmente considera a utilização da Oracle Cloud, permitindo disponibilizar o backend e o banco de dados para acesso do frontend e dos demais integrantes da equipe.
-A utilização de variáveis de ambiente facilita a mudança entre:
-Desenvolvimento
-      ↓
-Ambiente de produção
-sem necessidade de alterar diretamente o código da aplicação.
-👥 Equipe
-O projeto é desenvolvido por uma equipe de 8 integrantes, com responsabilidades distribuídas entre pesquisa, levantamento e coleta de dados, análise, desenvolvimento, frontend, backend, banco de dados e demais atividades necessárias para o projeto.
-🎓 Contexto Acadêmico
-Projeto desenvolvido para a disciplina:
-Análise e Projeto de Sistemas II
-O desenvolvimento envolve pesquisa, análise, modelagem e implementação de uma solução computacional baseada em dados reais.
-🚧 Status
-Em desenvolvimento
-[████░░░░░░░░░░░░░░░░] Estrutura inicial
-As próximas etapas serão definidas conforme os dados da pesquisa forem coletados e validados pela equipe.
-📄 Licença
-Este projeto foi desenvolvido para fins acadêmicos.
+        |
+        | dados persistidos e histórico
+        v
+API do Algamar
 ```
+
+A implementação é organizada em camadas:
+
+- `routes`: definição dos caminhos HTTP.
+- `controllers`: entrada e saída das requisições.
+- `services`: regras de negócio e integração com a API Python.
+- `repositories`: acesso ao PostgreSQL.
+- `entities`: modelos dos dados do domínio.
+- `middlewares`: autenticação, logs e tratamento de erros.
+- `config`: configuração da aplicação e do banco.
+
+## Integração com a API Python
+
+A integração é realizada pelo serviço de Machine Learning configurado na aplicação. O backend consulta dois conjuntos de dados:
+
+- Predições de risco.
+- Dados ambientais marinhos.
+
+As informações são cruzadas principalmente por latitude, longitude, ano e mês. A API Python pode fornecer os dados em diferentes formatos equivalentes, e o backend realiza a normalização antes da persistência.
+
+### Dados de predição esperados
+
+Cada predição pode conter:
+
+- identificador da predição;
+- latitude e longitude;
+- ano e mês ou uma data equivalente;
+- probabilidade de risco;
+- nível de risco;
+- versão do modelo.
+
+### Dados ambientais esperados
+
+Os dados marinhos podem conter:
+
+- temperatura em graus Celsius;
+- clorofila em miligramas por metro cúbico;
+- salinidade em PSU;
+- latitude e longitude;
+- ano e mês ou uma data equivalente.
+
+Os fatores ambientais também podem ser enviados agrupados em um objeto `environmental_factors`.
+
+### Processamento realizado
+
+A cada sincronização, o backend:
+
+1. Consulta as predições e os dados marinhos.
+2. Valida os registros recebidos.
+3. Cruza os registros por localização e período.
+4. Enriquece cada predição com os fatores ambientais correspondentes.
+5. Classifica a região costeira.
+6. Normaliza o nível de risco para `ALTO`, `MÉDIO` ou `BAIXO`.
+7. Persiste o lote e os pontos individuais no PostgreSQL.
+8. Consulta o histórico já armazenado.
+9. Calcula tendências por ano e mês.
+10. Retorna os dados consolidados pela API do Algamar.
+
+Se a API Python retornar erro, JSON inválido ou não responder dentro do tempo limite, o backend informa a falha e não considera a sincronização concluída.
+
+## Banco de dados
+
+O banco utilizado é o PostgreSQL. As tabelas essenciais são criadas automaticamente na inicialização da aplicação, de forma idempotente.
+
+### `users`
+
+Armazena os dados de autenticação dos usuários:
+
+- identificador;
+- nome completo;
+- email único;
+- hash da senha;
+- datas de criação e atualização.
+
+A senha nunca é armazenada em texto puro. O backend utiliza bcrypt para gerar o hash.
+
+### `prediction_batches`
+
+Representa cada sincronização realizada com a API Python. Armazena:
+
+- identificador do lote;
+- origem dos dados;
+- versão do modelo, quando disponível;
+- data de criação.
+
+### `predictions`
+
+Armazena cada ponto de predição de forma normalizada e relacionada a um lote. Contém:
+
+- identificador do lote;
+- identificador externo da predição;
+- latitude e longitude;
+- região;
+- ano e mês;
+- probabilidade;
+- nível de risco;
+- temperatura;
+- clorofila;
+- salinidade;
+- versão do modelo;
+- data de criação.
+
+Existem índices para período, região e nível de risco. Isso permite consultar o histórico e aplicar filtros com melhor desempenho.
+
+### Persistência transacional
+
+A gravação de um lote e dos seus pontos ocorre em uma transação. Se alguma inserção falhar, o lote inteiro é revertido para evitar histórico incompleto.
+
+## Fluxo dos dados
+
+```text
+API Python
+   |
+   | predições + dados ambientais
+   v
+Normalização e validação
+   |
+   v
+Enriquecimento por localização e período
+   |
+   v
+Criação do lote de sincronização
+   |
+   v
+Persistência dos pontos em predictions
+   |
+   v
+Consulta do histórico
+   |
+   v
+Tendências e resposta consolidada
+```
+
+A cada consulta bem-sucedida da rota de riscos, um novo lote é registrado. Dessa forma, o histórico representa as sincronizações realizadas ao longo do tempo.
+
+## Segurança e configuração
+
+As rotas de autenticação são utilizadas para criar usuários e obter tokens. As demais rotas exigem um token JWT válido. Segredos, senhas e valores específicos de infraestrutura devem ser fornecidos por variáveis de ambiente e não devem ser registrados no README ou no controle de versão.
+
+Variáveis utilizadas pela aplicação:
+
+| Variável         | Finalidade                                 |
+| ---------------- | ------------------------------------------ |
+| `NODE_ENV`       | Ambiente de execução                       |
+| `PORT`           | Porta HTTP da aplicação                    |
+| `LOG_LEVEL`      | Nível de detalhamento dos logs             |
+| `DB_HOST`        | Endereço do PostgreSQL                     |
+| `DB_PORT`        | Porta do PostgreSQL                        |
+| `DB_NAME`        | Nome do banco                              |
+| `DB_USER`        | Usuário de conexão                         |
+| `DB_PASSWORD`    | Senha de conexão                           |
+| `ML_API_URL`     | Endereço da API Python de Machine Learning |
+| `JWT_SECRET`     | Segredo usado para assinar tokens          |
+| `JWT_EXPIRES_IN` | Tempo de expiração dos tokens              |
+
+Os valores dessas variáveis devem ser definidos no ambiente de execução. O arquivo `.env` não deve ser versionado.
+
+## Rotas principais
+
+- `POST /api/auth/register`: cria um usuário.
+- `POST /api/auth/login`: autentica um usuário e retorna um token.
+- `GET /api/health`: verifica a disponibilidade da aplicação e do banco.
+- `GET /api/ml/coastal-risks`: sincroniza, persiste e retorna os riscos costeiros e suas tendências.
+
+As rotas de autenticação são públicas. As demais exigem autenticação.
+
+A rota de riscos aceita filtros opcionais por região, nível de risco e mês. O retorno contém resumo geral, tendências históricas, filtros aplicados e pontos enriquecidos.
+
+## Tecnologias
+
+- Node.js
+- TypeScript
+- Express
+- PostgreSQL
+- `pg`
+- bcrypt
+- JWT
+- Pino
+
+## Princípios de dados
+
+O backend deve trabalhar com dados provenientes de fontes reais e identificáveis. A API Python é a origem das predições e dos dados ambientais; o backend é responsável por validar, relacionar, persistir e disponibilizar essas informações sem substituir o processamento científico do modelo.
+
+A estrutura do banco deve evoluir conforme novos dados reais e novas necessidades de análise forem validados pela equipe do projeto.

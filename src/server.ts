@@ -1,5 +1,9 @@
 import { app } from "./app.js";
-import { database, testDatabaseConnection } from "./config/database.js";
+import {
+  database,
+  initializeDatabase,
+  testDatabaseConnection,
+} from "./config/database.js";
 import { env } from "./config/env.js";
 import { logger } from "./logger/logger.js";
 
@@ -19,6 +23,7 @@ async function startServer(): Promise<void> {
 
   try {
     await testDatabaseConnection();
+    await initializeDatabase();
 
     const server = app.listen(env.port, "0.0.0.0", () => {
       logger.info(

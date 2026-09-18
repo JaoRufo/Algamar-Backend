@@ -30,4 +30,9 @@ export const env = {
   ml: {
     apiUrl: getEnv("ML_API_URL", "http://127.0.0.1:8000"),
   },
+
+  auth: {
+    jwtSecret: getEnv("JWT_SECRET", "change-this-secret-in-production"),
+    tokenExpiresIn: getEnv("JWT_EXPIRES_IN", "1d"),
+  },
 };
