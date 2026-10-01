@@ -187,6 +187,7 @@ Variáveis utilizadas pela aplicação:
 | `DB_USER`        | Usuário de conexão                         |
 | `DB_PASSWORD`    | Senha de conexão                           |
 | `ML_API_URL`     | Endereço da API Python de Machine Learning |
+| `ML_API_LIMIT`   | Quantidade máxima de registros solicitados à API Python |
 | `JWT_SECRET`     | Segredo usado para assinar tokens          |
 | `JWT_EXPIRES_IN` | Tempo de expiração dos tokens              |
 

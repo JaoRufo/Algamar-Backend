@@ -141,10 +141,10 @@ GET /api/ml/coastal-risks
 Ml controller
   ↓ parse de filtros
 MlPredictionService
-  ├── GET {ML_API_URL}/predictions?limit=100
-  ├── GET {ML_API_URL}/marine-data?limit=100
-  ├── normalização + cruzamento por coordenadas/período
-  ├── classificação de região e risco
+  ├── GET {ML_API_URL}/marine-data?limit={ML_API_LIMIT}
+  ├── cálculo das 12 variáveis de entrada
+  ├── POST {ML_API_URL}/predict por ponto/mês
+  ├── classificação de região e normalização do risco
   ├── hash SHA-256 + transação PostgreSQL
   └── consulta do histórico
   ↓
@@ -197,7 +197,8 @@ Os nomes abaixo foram extraídos de `src/config/env.ts` e `.env.example`. Os val
 | `DB_PASSWORD` | Senha PostgreSQL | Definido no código; valor omitido | Opcional por ter default | `env.ts:27` |
 | `DB_POOL_MAX` | Número máximo configurado no pool | `5` | Opcional por ter default | `env.ts:28` |
 | `ML_API_URL` | Base URL da API Python | `http://127.0.0.1:8000` | Opcional por ter default | `env.ts:32` |
-| `ML_HISTORY_RETENTION_DAYS` | Retenção temporal de lotes | `90` | Opcional por ter default | `env.ts:33` |
+| `ML_API_LIMIT` | Limite de registros por consulta à API Python | `100` | Opcional por ter default | `env.ts:33` |
+| `ML_HISTORY_RETENTION_DAYS` | Retenção temporal de lotes | `90` | Opcional por ter default | `env.ts:34` |
 | `ML_MAX_HISTORY_BATCHES` | Limite de lotes preservados | `1000` | Opcional por ter default | `env.ts:34` |
 | `JWT_SECRET` | Segredo de assinatura/verificação JWT | Definido no código; valor omitido | Opcional por ter default inseguro | `env.ts:38` |
 | `JWT_EXPIRES_IN` | Expiração do token | `1d` | Opcional por ter default | `env.ts:39` |
@@ -538,25 +539,25 @@ O DELETE de limpeza opera sobre `prediction_batches`; por causa de `ON DELETE CA
 
 Base URL: `ML_API_URL`, com uma barra final removida pelo service.
 
-Chamadas paralelas:
+Chamadas realizadas:
 
 ```text
-GET {ML_API_URL}/predictions?limit=100
-GET {ML_API_URL}/marine-data?limit=100
+GET {ML_API_URL}/marine-data?limit={ML_API_LIMIT}
+POST {ML_API_URL}/predict
 ```
 
-O transporte é escolhido pela URL: módulo `https` para protocolo `https:`, caso contrário módulo `http`. Não são enviados headers de autenticação, token ou payload JSON. O timeout da requisição é de 10.000 ms.
+O Backend seleciona o ano mais recente disponível e envia uma requisição `POST /predict` para cada ponto desse ano. O payload contém `mes`, coordenadas, distância ao hotspot, valores do ano anterior, médias históricas mensais e médias móveis de 36 registros. O transporte é escolhido pela URL: módulo `https` para protocolo `https:`, caso contrário módulo `http`. Não são enviados headers de autenticação ou token. O timeout de cada requisição é de 10.000 ms.
 
 Resposta aceita:
 
-- predições: array direto ou objeto `{ "predictions": [...] }`;
-- dados marinhos: array direto, `{ "marine_data": [...] }` ou `{ "data": [...] }`.
+- dados marinhos: array direto, `{ "marine_data": [...] }` ou `{ "data": [...] }`;
+- predição individual: objeto com `probability`, `risk` e `model_version`.
 
-Cada item precisa fornecer coordenadas reconhecíveis para sobreviver ao enriquecimento. O service não valida esquema externo com biblioteca formal. Status HTTP fora de 2xx, JSON inválido, timeout, erro de rede e ausência de predições geram exceção.
+Cada item marinho precisa fornecer coordenadas e período reconhecíveis. O service não valida esquema externo com biblioteca formal. Status HTTP fora de 2xx, JSON inválido, timeout, erro de rede e ausência de dados ambientais geram exceção.
 
 ### Cruzamento e persistência
 
-O backend cruza previsão e dados marinhos pela chave `(latitude.toFixed(4), longitude.toFixed(4), ano, mês)`. Fatores ambientais podem estar diretamente no registro marinho ou em `environmental_factors`/`environmentalFactors`. Ausência de correspondência não descarta o ponto; seus três fatores ficam `null`.
+O backend calcula as features usando a chave de coordenadas `(latitude.toFixed(4), longitude.toFixed(4))`. Fatores ambientais podem estar diretamente no registro marinho ou em `environmental_factors`/`environmentalFactors`. Valores históricos ausentes são enviados como `0`, mantendo o payload numérico exigido pelo endpoint Python.
 
 O service retorna também `batchId`, porém `ml.controller.ts` não o inclui na resposta HTTP. Portanto, o ID do lote é persistido, mas não é exposto por esse endpoint no código atual.
 

@@ -30,6 +30,7 @@ export const env = {
 
   ml: {
     apiUrl: getEnv("ML_API_URL", "http://127.0.0.1:8000"),
+    apiLimit: Number(getEnv("ML_API_LIMIT", "100")),
     historyRetentionDays: Number(getEnv("ML_HISTORY_RETENTION_DAYS", "90")),
     maxHistoryBatches: Number(getEnv("ML_MAX_HISTORY_BATCHES", "1000")),
   },
