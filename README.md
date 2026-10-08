@@ -21,7 +21,7 @@ O backend não executa o modelo de Machine Learning. A responsabilidade pela ger
 ```text
 API Python de Machine Learning
         |
-        | predições e dados marinhos
+        | /predictions e /marine-data
         v
 Backend Algamar
         |
@@ -80,18 +80,21 @@ Os fatores ambientais também podem ser enviados agrupados em um objeto `environ
 
 A cada sincronização, o backend:
 
-1. Consulta as predições e os dados marinhos.
-2. Valida os registros recebidos.
-3. Cruza os registros por localização e período.
-4. Enriquece cada predição com os fatores ambientais correspondentes.
-5. Classifica a região costeira.
-6. Normaliza o nível de risco para `ALTO`, `MÉDIO` ou `BAIXO`.
-7. Persiste o lote e os pontos individuais no PostgreSQL.
-8. Consulta o histórico já armazenado.
-9. Calcula tendências por ano e mês.
-10. Retorna os dados consolidados pela API do Algamar.
+1. Consulta `/predictions` para obter as probabilidades e os níveis de risco calculados pelo modelo oficial.
+2. Consulta `/marine-data` para obter os fatores ambientais da mesma amostra.
+3. Valida os registros recebidos.
+4. Cruza os registros por localização e período.
+5. Enriquece cada predição com os fatores ambientais correspondentes.
+6. Classifica a região costeira para fins de agrupamento geográfico.
+7. Preserva o `risk_level` e a `probability` retornados pelo Machine Learning.
+8. Persiste o lote e os pontos individuais no PostgreSQL.
+9. Consulta o histórico já armazenado.
+10. Calcula tendências por ano e mês.
+11. Retorna os dados consolidados pela API do Algamar.
 
-Se a API Python retornar erro, JSON inválido ou não responder dentro do tempo limite, o backend informa a falha e não considera a sincronização concluída.
+O backend não recalcula as probabilidades com features parciais. Isso garante que os valores exibidos sejam os mesmos produzidos pelo modelo e pelos artefatos carregados pela API Python.
+
+Se a API Python retornar erro, JSON inválido ou não responder dentro do tempo limite, o backend utiliza o último histórico válido disponível. Nesse caso, a resposta permanece HTTP 200 e inclui `stale: true`. Quando a sincronização é concluída normalmente, a resposta inclui `stale: false`. Se ainda não houver histórico salvo, a rota retorna erro.
 
 ## Banco de dados
 
@@ -188,6 +191,10 @@ Variáveis utilizadas pela aplicação:
 | `DB_PASSWORD`    | Senha de conexão                           |
 | `ML_API_URL`     | Endereço da API Python de Machine Learning |
 | `ML_API_LIMIT`   | Quantidade máxima de registros solicitados à API Python |
+| `ML_REQUEST_TIMEOUT_MS` | Tempo limite das requisições à API Python, em milissegundos |
+| `ML_PREDICTION_CONCURRENCY` | Limite configurável para chamadas individuais de predição |
+| `ML_HISTORY_RETENTION_DAYS` | Número máximo de dias de histórico mantido |
+| `ML_MAX_HISTORY_BATCHES` | Número máximo de lotes de histórico mantidos |
 | `JWT_SECRET`     | Segredo usado para assinar tokens          |
 | `JWT_EXPIRES_IN` | Tempo de expiração dos tokens              |
 
@@ -205,7 +212,32 @@ Os valores dessas variáveis devem ser definidos no ambiente de execução. O ar
 As rotas de cadastro e login são públicas. As operações de edição e exclusão
 exigem autenticação.
 
-A rota de riscos aceita filtros opcionais por região, nível de risco e mês. O retorno contém resumo geral, tendências históricas, filtros aplicados e pontos enriquecidos.
+A rota de riscos aceita filtros opcionais por região, nível de risco e mês. O retorno contém resumo geral, tendências históricas, filtros aplicados, pontos enriquecidos e o indicador `stale`.
+
+### Resposta de `/api/ml/coastal-risks`
+
+Os campos `summary` e `data` representam a amostra atual retornada pelo Machine Learning. O campo `trends` é calculado sobre o histórico persistido no PostgreSQL e pode conter mais pontos do que a amostra atual.
+
+```json
+{
+  "success": true,
+  "summary": {
+    "total_monitored": 0,
+    "high_risk_count": 0,
+    "general_status": "NORMAL"
+  },
+  "trends": [],
+  "filters_applied": {
+    "region": "todas",
+    "risk_level": "todos",
+    "month": "todos"
+  },
+  "stale": false,
+  "data": []
+}
+```
+
+`trends.high_risk_points` conta os pontos históricos classificados como `ALTO` para cada combinação de ano e mês. Portanto, esse valor não deve ser comparado diretamente com `summary.high_risk_count` sem considerar que as fontes podem ter quantidades e lotes diferentes.
 
 ## Tecnologias
 
