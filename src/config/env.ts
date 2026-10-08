@@ -31,6 +31,8 @@ export const env = {
   ml: {
     apiUrl: getEnv("ML_API_URL", "http://127.0.0.1:8000"),
     apiLimit: Number(getEnv("ML_API_LIMIT", "100")),
+    requestTimeoutMs: Number(getEnv("ML_REQUEST_TIMEOUT_MS", "10000")),
+    predictionConcurrency: Number(getEnv("ML_PREDICTION_CONCURRENCY", "5")),
     historyRetentionDays: Number(getEnv("ML_HISTORY_RETENTION_DAYS", "90")),
     maxHistoryBatches: Number(getEnv("ML_MAX_HISTORY_BATCHES", "1000")),
   },

@@ -76,6 +76,7 @@ export async function coastalRisks(
           risk_level: filters.riskLevel ?? "todos",
           month: filters.month ?? "todos",
         },
+        stale: result.stale,
         data: points,
       });
   } catch (error) {

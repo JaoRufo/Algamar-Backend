@@ -221,7 +221,7 @@ function fetchPythonApi(url: string): Promise<unknown> {
         }
       });
     });
-    request.setTimeout(10000, () =>
+    request.setTimeout(env.ml.requestTimeoutMs, () =>
       request.destroy(new Error("Timeout ao consultar a API Python.")),
     );
     request.on("error", reject);
@@ -264,7 +264,7 @@ function postPythonApi(url: string, payload: JsonRecord): Promise<JsonRecord> {
         });
       },
     );
-    request.setTimeout(10000, () =>
+    request.setTimeout(env.ml.requestTimeoutMs, () =>
       request.destroy(new Error("Timeout ao consultar a API Python.")),
     );
     request.on("error", reject);
@@ -383,14 +383,19 @@ async function predictFromMarineData(
     .filter((point): point is MarinePoint => point !== null);
   const targetYear = Math.max(...series.map((point) => point.year));
   const targets = series.filter((point) => point.year === targetYear);
-  const predictions = await Promise.all(
-    targets.map(async (point, index) => {
+  const predictions: EnrichedPoint[] = [];
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (nextIndex < targets.length) {
+      const index = nextIndex++;
+      const point = targets[index];
+      if (!point) return;
       const result = await postPythonApi(
         `${env.ml.apiUrl.replace(/\/$/, "")}/predict`,
         predictionFeatures(point, series),
       );
       const probability = numberOf(result.probability) ?? 0;
-      return {
+      predictions[index] = {
         id: `${point.latitude}:${point.longitude}:${point.year}:${point.month}:${index}`,
         latitude: point.latitude,
         longitude: point.longitude,
@@ -406,7 +411,13 @@ async function predictFromMarineData(
         },
         model_version: textOf(result.model_version, "v1.0"),
       } satisfies EnrichedPoint;
-    }),
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(Math.max(1, env.ml.predictionConcurrency), targets.length) },
+      () => worker(),
+    ),
   );
   return predictions;
 }
@@ -519,28 +530,63 @@ async function historical(filters: QueryFilters): Promise<EnrichedPoint[]> {
 }
 
 export class MlPredictionService {
+  private refreshPromise: Promise<{ points: EnrichedPoint[]; batchId: string }> | null = null;
+
+  private async refresh(): Promise<{ points: EnrichedPoint[]; batchId: string }> {
+    const apiBaseUrl = env.ml.apiUrl.replace(/\/$/, "");
+    const [marinePayload, predictionsPayload] = await Promise.all([
+      fetchPythonApi(
+        `${apiBaseUrl}/marine-data?limit=${encodeURIComponent(env.ml.apiLimit)}`,
+      ),
+      fetchPythonApi(
+        `${apiBaseUrl}/predictions?limit=${encodeURIComponent(env.ml.apiLimit)}`,
+      ),
+    ]);
+    const marine = itemsOf(marinePayload, "marine_data").length
+      ? itemsOf(marinePayload, "marine_data")
+      : itemsOf(marinePayload, "data");
+    const predictions = itemsOf(predictionsPayload, "predictions");
+    if (!marine.length || !predictions.length)
+      throw new Error("A API Python não retornou dados ambientais ou predições válidas.");
+    const points = enrich(predictions, marine);
+    if (!points.length)
+      throw new Error("Não foi possível gerar predições para os dados ambientais.");
+    return { points, batchId: await persist(points) };
+  }
+
+  private refreshOnce(): Promise<{ points: EnrichedPoint[]; batchId: string }> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.refresh().finally(() => {
+        this.refreshPromise = null;
+      });
+    }
+    return this.refreshPromise;
+  }
+
   async getCoastalRisks(filters: QueryFilters): Promise<{
     points: EnrichedPoint[];
     history: EnrichedPoint[];
     batchId: string;
+    stale: boolean;
   }> {
-    const apiBaseUrl = env.ml.apiUrl.replace(/\/$/, "");
-    const marinePayload = await fetchPythonApi(
-      `${apiBaseUrl}/marine-data?limit=${encodeURIComponent(env.ml.apiLimit)}`,
-    );
-    const marine = itemsOf(marinePayload, "marine_data").length
-      ? itemsOf(marinePayload, "marine_data")
-      : itemsOf(marinePayload, "data");
-    if (!marine.length)
-      throw new Error("A API Python não retornou dados ambientais válidos.");
-    const points = await predictFromMarineData(marine);
-    if (!points.length)
-      throw new Error("Não foi possível gerar predições para os dados ambientais.");
-    const batchId = await persist(points);
+    let refreshed: { points: EnrichedPoint[]; batchId: string };
+    let stale = false;
+    try {
+      refreshed = await this.refreshOnce();
+    } catch (error) {
+      const fallback = await historical({});
+      if (!fallback.length) throw error;
+      refreshed = {
+        points: filterPoints(fallback, filters),
+        batchId: "stale",
+      };
+      stale = true;
+    }
     return {
-      points: filterPoints(points, filters),
+      points: filterPoints(refreshed.points, filters),
       history: await historical(filters),
-      batchId,
+      batchId: refreshed.batchId,
+      stale,
     };
   }
 }
