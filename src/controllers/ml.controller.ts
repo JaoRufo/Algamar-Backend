@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   MlApiError,
+  MlResponse,
   mlPredictionService,
   QueryFilters,
 } from "../services/mlPrediction.service.js";
@@ -10,6 +11,54 @@ const SPECIES = ["Dinophysis", "Pseudo-nitzschia"];
 const RISK_LEVELS = ["BAIXO", "MODERADO", "ALTO"];
 
 type QueryOptions = Record<string, string | undefined>;
+
+function forwardedQuery(request: Request): Record<string, string | string[] | undefined> {
+  return Object.fromEntries(
+    Object.entries(request.query).flatMap(([key, value]) => {
+      if (typeof value === "string") return [[key, value]];
+      if (Array.isArray(value)) {
+        const values = value.filter((item): item is string => typeof item === "string");
+        return values.length ? [[key, values]] : [];
+      }
+      return [];
+    }),
+  );
+}
+
+function isMlResponse(value: unknown): value is MlResponse {
+  return Boolean(value && typeof value === "object" && "payload" in value && "statusCode" in value);
+}
+
+export async function forwardMlGet(
+  request: Request,
+  response: Response,
+  path: string,
+): Promise<void> {
+  const authorization = request.get("authorization");
+  const headers = authorization ? { authorization } : {};
+  try {
+    const data = await mlPredictionService.getResource(
+      path,
+      forwardedQuery(request),
+      0,
+      headers,
+      true,
+    );
+    response.status(isMlResponse(data) ? data.statusCode : 200).json(isMlResponse(data) ? data.payload : data);
+  } catch (error) {
+    if (error instanceof MlApiError && error.statusCode) {
+      if (error.payload !== undefined && typeof error.payload === "object") {
+        response.status(error.statusCode).json(error.payload);
+      } else {
+        response.status(error.statusCode).json({ detail: error.message });
+      }
+      return;
+    }
+    response.status(503).json({
+      detail: "Serviço de Machine Learning indisponível.",
+    });
+  }
+}
 
 function queryValue(request: Request, name: string): string | undefined {
   const value = request.query[name];

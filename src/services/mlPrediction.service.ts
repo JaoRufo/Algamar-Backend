@@ -11,6 +11,7 @@ export class MlApiError extends Error {
   constructor(
     message: string,
     public readonly statusCode?: number,
+    public readonly payload?: unknown,
   ) {
     super(message);
     this.name = "MlApiError";
@@ -206,29 +207,34 @@ function filterPoints(
       (filters.month === undefined || point.month === filters.month),
   );
 }
-function fetchPythonApi(url: string): Promise<unknown> {
+type MlQueryValue = string | string[] | undefined;
+export type MlResponse = { payload: unknown; statusCode: number };
+
+function fetchPythonApi(
+  url: string,
+  headers: Record<string, string> = {},
+  preserveStatus = false,
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     logger.debug({ url }, "ML REQUEST");
     const transport = new URL(url).protocol === "https:" ? https : http;
-    const request = transport.get(url, (response) => {
+    const request = transport.get(url, { headers }, (response) => {
       let data = "";
       response.on("data", (chunk) => {
         data += chunk;
       });
       response.on("end", () => {
+        let payload: unknown;
         try {
-          if (
-            response.statusCode &&
-            response.statusCode >= 200 &&
-            response.statusCode < 300
-          )
-            resolve(JSON.parse(data));
-          else
-            reject(new MlApiError(`API Python retornou status ${response.statusCode}`, response.statusCode));
+          payload = JSON.parse(data);
         } catch {
-          reject(new MlApiError("A API Python retornou JSON inválido.", response.statusCode));
+          payload = data;
         }
+        if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300)
+          resolve(preserveStatus ? { payload, statusCode: response.statusCode } : payload);
+        else
+          reject(new MlApiError(`API Python retornou status ${response.statusCode}`, response.statusCode, payload));
         logger.debug({ url, durationMs: Date.now() - startedAt, statusCode: response.statusCode }, "ML RESPONSE");
       });
     });
@@ -549,22 +555,28 @@ export class MlPredictionService {
 
   async getResource(
     path: string,
-    query: Record<string, string | undefined> = {},
+    query: Record<string, MlQueryValue> = {},
     cacheTtlMs = env.ml.cacheTtlMs,
+    headers: Record<string, string> = {},
+    preserveStatus = false,
   ): Promise<unknown> {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined) params.set(key, value);
+      if (Array.isArray(value)) {
+        for (const item of value) params.append(key, item);
+      } else if (value !== undefined) {
+        params.set(key, value);
+      }
     }
     const suffix = params.toString();
     const cacheKey = `${path}?${suffix}`;
-    const cached = this.cache.get(cacheKey);
+    const cached = Object.keys(headers).length === 0 ? this.cache.get(cacheKey) : undefined;
     if (cached && cached.expiresAt > Date.now()) return cached.value;
     if (cached) this.cache.delete(cacheKey);
 
     const baseUrl = env.ml.apiUrl.replace(/\/$/, "");
-    const value = await fetchPythonApi(`${baseUrl}${path}${suffix ? `?${suffix}` : ""}`);
-    if (cacheTtlMs > 0) {
+    const value = await fetchPythonApi(`${baseUrl}${path}${suffix ? `?${suffix}` : ""}`, headers, preserveStatus);
+    if (cacheTtlMs > 0 && Object.keys(headers).length === 0 && !preserveStatus) {
       this.cache.set(cacheKey, { expiresAt: Date.now() + cacheTtlMs, value });
     }
     return value;

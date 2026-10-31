@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "test:integration": "node --import tsx --test tests/**/*.test.ts",
     "start": "node dist/server.js",
     "check": "tsc --noEmit"
   },
