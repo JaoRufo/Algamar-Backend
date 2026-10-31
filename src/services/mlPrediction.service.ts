@@ -4,8 +4,18 @@ import { createHash } from "crypto";
 import { database } from "../config/database.js";
 import { env } from "../config/env.js";
 import { EnrichedPoint } from "../entities/prediction.entity.js";
+import { logger } from "../logger/logger.js";
 
 type JsonRecord = Record<string, unknown>;
+export class MlApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode?: number,
+  ) {
+    super(message);
+    this.name = "MlApiError";
+  }
+}
 export type QueryFilters = {
   region?: string;
   riskLevel?: string;
@@ -198,6 +208,8 @@ function filterPoints(
 }
 function fetchPythonApi(url: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    logger.debug({ url }, "ML REQUEST");
     const transport = new URL(url).protocol === "https:" ? https : http;
     const request = transport.get(url, (response) => {
       let data = "";
@@ -213,12 +225,11 @@ function fetchPythonApi(url: string): Promise<unknown> {
           )
             resolve(JSON.parse(data));
           else
-            reject(
-              new Error(`API Python retornou status ${response.statusCode}`),
-            );
+            reject(new MlApiError(`API Python retornou status ${response.statusCode}`, response.statusCode));
         } catch {
-          reject(new Error("A API Python retornou JSON inválido."));
+          reject(new MlApiError("A API Python retornou JSON inválido.", response.statusCode));
         }
+        logger.debug({ url, durationMs: Date.now() - startedAt, statusCode: response.statusCode }, "ML RESPONSE");
       });
     });
     request.setTimeout(env.ml.requestTimeoutMs, () =>
@@ -230,6 +241,8 @@ function fetchPythonApi(url: string): Promise<unknown> {
 
 function postPythonApi(url: string, payload: JsonRecord): Promise<JsonRecord> {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    logger.debug({ url, method: "POST" }, "ML REQUEST");
     const parsedUrl = new URL(url);
     const transport = parsedUrl.protocol === "https:" ? https : http;
     const body = JSON.stringify(payload);
@@ -248,6 +261,7 @@ function postPythonApi(url: string, payload: JsonRecord): Promise<JsonRecord> {
           data += chunk;
         });
         response.on("end", () => {
+          logger.debug({ url, method: "POST", durationMs: Date.now() - startedAt, statusCode: response.statusCode }, "ML RESPONSE");
           try {
             const parsed = JSON.parse(data);
             if (
@@ -257,15 +271,15 @@ function postPythonApi(url: string, payload: JsonRecord): Promise<JsonRecord> {
               isRecord(parsed)
             )
               resolve(parsed);
-            else reject(new Error(`API Python retornou status ${response.statusCode}`));
+            else reject(new MlApiError(`API Python retornou status ${response.statusCode}`, response.statusCode));
           } catch {
-            reject(new Error("A API Python retornou JSON inválido."));
+            reject(new MlApiError("A API Python retornou JSON inválido.", response.statusCode));
           }
         });
       },
     );
     request.setTimeout(env.ml.requestTimeoutMs, () =>
-      request.destroy(new Error("Timeout ao consultar a API Python.")),
+      request.destroy(new MlApiError("Timeout ao consultar a API Python.")),
     );
     request.on("error", reject);
     request.write(body);
@@ -531,6 +545,35 @@ async function historical(filters: QueryFilters): Promise<EnrichedPoint[]> {
 
 export class MlPredictionService {
   private refreshPromise: Promise<{ points: EnrichedPoint[]; batchId: string }> | null = null;
+  private readonly cache = new Map<string, { expiresAt: number; value: unknown }>();
+
+  async getResource(
+    path: string,
+    query: Record<string, string | undefined> = {},
+    cacheTtlMs = env.ml.cacheTtlMs,
+  ): Promise<unknown> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, value);
+    }
+    const suffix = params.toString();
+    const cacheKey = `${path}?${suffix}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (cached) this.cache.delete(cacheKey);
+
+    const baseUrl = env.ml.apiUrl.replace(/\/$/, "");
+    const value = await fetchPythonApi(`${baseUrl}${path}${suffix ? `?${suffix}` : ""}`);
+    if (cacheTtlMs > 0) {
+      this.cache.set(cacheKey, { expiresAt: Date.now() + cacheTtlMs, value });
+    }
+    return value;
+  }
+
+  async predict(payload: JsonRecord): Promise<unknown> {
+    const baseUrl = env.ml.apiUrl.replace(/\/$/, "");
+    return postPythonApi(`${baseUrl}/predict`, payload);
+  }
 
   private async refresh(): Promise<{ points: EnrichedPoint[]; batchId: string }> {
     const apiBaseUrl = env.ml.apiUrl.replace(/\/$/, "");

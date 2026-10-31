@@ -1,6 +1,23 @@
 import { Router } from "express";
-import { coastalRisks } from "../controllers/ml.controller.js";
+import * as controller from "../controllers/ml.controller.js";
 
 const router = Router();
-router.get("/coastal-risks", coastalRisks);
+router.get("/", controller.mlRoot);
+router.get("/health", controller.mlHealth);
+router.get("/marine-data", controller.marineData);
+router.get("/climatologia", controller.climatologia);
+router.get("/predictions", controller.predictions);
+router.post("/predict", controller.predict);
+router.get("/forecast/janela", controller.forecastWindow);
+router.get("/forecast/meta", controller.forecastMeta);
+router.get("/forecast/regioes", controller.forecastRegions);
+router.get("/forecast/mapa", controller.forecastMap);
+router.get("/forecast", controller.forecast);
+router.get("/coastal-risks", controller.coastalRisks);
+router.get("/observado", controller.observed);
+router.get("/condicoes-ambientais", controller.environmentalConditions);
+router.get("/condicoes-propicias/historico", controller.favorableConditionsHistory);
+router.get("/condicoes-propicias", controller.favorableConditions);
+router.get("/teste/meses", controller.testMonths);
+router.get("/teste/hindcast", controller.hindcast);
 export default router;
