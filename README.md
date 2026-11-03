@@ -1,257 +1,212 @@
 # Algamar Backend
 
-Backend responsável por receber, organizar, validar e disponibilizar os dados do sistema Algamar. A aplicação funciona como uma camada intermediária entre a API de Machine Learning em Python, o banco de dados PostgreSQL e os consumidores da API.
+API backend do sistema Algamar. A aplicação autentica usuários, verifica a saúde do PostgreSQL e funciona como uma camada segura entre os consumidores da API e o serviço de Machine Learning em Python.
 
-## Responsabilidades
+O backend não executa nem treina o modelo científico. Ele encaminha consultas para a API Python, normaliza configurações de acesso, preserva respostas e disponibiliza os dados para o frontend e outros consumidores.
 
-- Expor uma API HTTP para o sistema Algamar.
-- Autenticar usuários e proteger as rotas internas.
-- Consultar a API Python de Machine Learning.
-- Combinar predições com dados ambientais marinhos.
-- Normalizar formatos recebidos de fontes externas.
-- Classificar pontos por região e nível de risco.
-- Persistir o histórico das sincronizações e das predições.
-- Calcular resumos e tendências históricas.
-- Disponibilizar dados consistentes para mapas, tabelas e indicadores.
+## Principais funcionalidades
 
-O backend não executa o modelo de Machine Learning. A responsabilidade pela geração das predições permanece com o serviço Python.
+- Cadastro, login, atualização e exclusão da conta do usuário.
+- Autenticação por JWT nas rotas privadas.
+- Health check da aplicação e da conexão com o PostgreSQL.
+- Proxy autenticado para predições, previsões, dados observados e condições ambientais.
+- Consulta de climatologia por coordenadas.
+- Consulta de condições propícias por espécie e região, incluindo histórico.
+- Consulta de riscos costeiros, mapa de previsão e metadados de forecast.
+- Reenvio dos parâmetros de consulta e do cabeçalho `Authorization` para a API Python quando aplicável.
+- Cache em memória para consultas GET sem autenticação encaminhada, com TTL configurável.
+- Tratamento de timeout, indisponibilidade e respostas de erro do serviço de Machine Learning.
+- Camada de persistência PostgreSQL para usuários, lotes e pontos de predição, incluindo dados ambientais enriquecidos e histórico de riscos.
 
 ## Arquitetura
 
 ```text
-API Python de Machine Learning
+Cliente / Frontend
         |
-        | /predictions e /marine-data
+        | HTTP + Bearer JWT
         v
-Backend Algamar
-        |
-        | validação, enriquecimento e regras de negócio
-        v
-PostgreSQL
-        |
-        | dados persistidos e histórico
-        v
-API do Algamar
+Backend Algamar (Express + TypeScript)
+        |                      \
+        | autenticação,          \ cache e proxy HTTP
+        | validação e logs       \
+        v                         v
+PostgreSQL                 API Python de Machine Learning
+                              | predições, forecast,
+                              | dados ambientais e observados
 ```
 
-A implementação é organizada em camadas:
+O código é organizado por responsabilidade:
 
-- `routes`: definição dos caminhos HTTP.
-- `controllers`: entrada e saída das requisições.
-- `services`: regras de negócio e integração com a API Python.
-- `repositories`: acesso ao PostgreSQL.
-- `entities`: modelos dos dados do domínio.
-- `middlewares`: autenticação, logs e tratamento de erros.
-- `config`: configuração da aplicação e do banco.
+- `src/routes`: composição dos caminhos HTTP.
+- `src/controllers`: validação de entrada e respostas HTTP.
+- `src/services`: autenticação, health check e integração com ML.
+- `src/repositories`: acesso aos dados de usuários.
+- `src/entities`: tipos do domínio, incluindo pontos enriquecidos.
+- `src/middlewares`: JWT, logs de requisição e tratamento de erros.
+- `src/config`: variáveis de ambiente e inicialização do banco.
 
-## Integração com a API Python
+## Autenticação e acesso
 
-A integração é realizada pelo serviço de Machine Learning configurado na aplicação. O backend consulta dois conjuntos de dados:
+Use o token retornado por `register` ou `login` no cabeçalho:
 
-- Predições de risco.
-- Dados ambientais marinhos.
-
-As informações são cruzadas principalmente por latitude, longitude, ano e mês. A API Python pode fornecer os dados em diferentes formatos equivalentes, e o backend realiza a normalização antes da persistência.
-
-### Dados de predição esperados
-
-Cada predição pode conter:
-
-- identificador da predição;
-- latitude e longitude;
-- ano e mês ou uma data equivalente;
-- probabilidade de risco;
-- nível de risco;
-- versão do modelo.
-
-### Dados ambientais esperados
-
-Os dados marinhos podem conter:
-
-- temperatura em graus Celsius;
-- clorofila em miligramas por metro cúbico;
-- salinidade em PSU;
-- latitude e longitude;
-- ano e mês ou uma data equivalente.
-
-Os fatores ambientais também podem ser enviados agrupados em um objeto `environmental_factors`.
-
-### Processamento realizado
-
-A cada sincronização, o backend:
-
-1. Consulta `/predictions` para obter as probabilidades e os níveis de risco calculados pelo modelo oficial.
-2. Consulta `/marine-data` para obter os fatores ambientais da mesma amostra.
-3. Valida os registros recebidos.
-4. Cruza os registros por localização e período.
-5. Enriquece cada predição com os fatores ambientais correspondentes.
-6. Classifica a região costeira para fins de agrupamento geográfico.
-7. Preserva o `risk_level` e a `probability` retornados pelo Machine Learning.
-8. Persiste o lote e os pontos individuais no PostgreSQL.
-9. Consulta o histórico já armazenado.
-10. Calcula tendências por ano e mês.
-11. Retorna os dados consolidados pela API do Algamar.
-
-O backend não recalcula as probabilidades com features parciais. Isso garante que os valores exibidos sejam os mesmos produzidos pelo modelo e pelos artefatos carregados pela API Python.
-
-Se a API Python retornar erro, JSON inválido ou não responder dentro do tempo limite, o backend utiliza o último histórico válido disponível. Nesse caso, a resposta permanece HTTP 200 e inclui `stale: true`. Quando a sincronização é concluída normalmente, a resposta inclui `stale: false`. Se ainda não houver histórico salvo, a rota retorna erro.
-
-## Banco de dados
-
-O banco utilizado é o PostgreSQL. As tabelas essenciais são criadas automaticamente na inicialização da aplicação, de forma idempotente.
-
-### `users`
-
-Armazena os dados de autenticação dos usuários:
-
-- identificador;
-- nome completo;
-- email único;
-- hash da senha;
-- datas de criação e atualização.
-
-A senha nunca é armazenada em texto puro. O backend utiliza bcrypt para gerar o hash.
-
-### `prediction_batches`
-
-Representa cada sincronização realizada com a API Python. Armazena:
-
-- identificador do lote;
-- origem dos dados;
-- versão do modelo, quando disponível;
-- data de criação.
-
-### `predictions`
-
-Armazena cada ponto de predição de forma normalizada e relacionada a um lote. Contém:
-
-- identificador do lote;
-- identificador externo da predição;
-- latitude e longitude;
-- região;
-- ano e mês;
-- probabilidade;
-- nível de risco;
-- temperatura;
-- clorofila;
-- salinidade;
-- versão do modelo;
-- data de criação.
-
-Existem índices para período, região e nível de risco. Isso permite consultar o histórico e aplicar filtros com melhor desempenho.
-
-### Persistência transacional
-
-A gravação de um lote e dos seus pontos ocorre em uma transação. Se alguma inserção falhar, o lote inteiro é revertido para evitar histórico incompleto.
-
-## Fluxo dos dados
-
-```text
-API Python
-   |
-   | predições + dados ambientais
-   v
-Normalização e validação
-   |
-   v
-Enriquecimento por localização e período
-   |
-   v
-Criação do lote de sincronização
-   |
-   v
-Persistência dos pontos em predictions
-   |
-   v
-Consulta do histórico
-   |
-   v
-Tendências e resposta consolidada
+```http
+Authorization: Bearer <token>
 ```
 
-A rota de riscos registra um novo lote somente quando o conteúdo normalizado recebido da API Python é diferente do último conteúdo persistido. Dessa forma, o histórico representa mudanças reais nas sincronizações, sem repetir indefinidamente os mesmos pontos.
+As rotas de cadastro, login e health check são públicas. A raiz `/`, as rotas de conta autenticada e todas as rotas `/api/ml/*` exigem um JWT válido.
 
-Para evitar crescimento desnecessário, o backend calcula um hash do lote normalizado. Se a API Python retornar exatamente os mesmos dados, o lote existente é reutilizado e nenhum ponto é inserido novamente. Lotes antigos também podem ser removidos automaticamente pelas configurações `ML_HISTORY_RETENTION_DAYS` e `ML_MAX_HISTORY_BATCHES`.
+O token contém o identificador do usuário no `sub`, o e-mail e uma data de expiração configurada por `JWT_EXPIRES_IN`. Senhas são armazenadas somente como hash bcrypt.
 
-## Segurança e configuração
+## Rotas da API
 
-As rotas de autenticação são utilizadas para criar usuários e obter tokens. As demais rotas exigem um token JWT válido. Segredos, senhas e valores específicos de infraestrutura devem ser fornecidos por variáveis de ambiente e não devem ser registrados no README ou no controle de versão.
+### Autenticação e sistema
 
-Variáveis utilizadas pela aplicação:
+| Método   | Endpoint             | Acesso  | Descrição                                                                         |
+| -------- | -------------------- | ------- | --------------------------------------------------------------------------------- |
+| `GET`    | `/`                  | JWT     | Confirma que a API está online.                                                   |
+| `POST`   | `/api/auth/register` | Público | Cria uma conta e retorna usuário público + JWT. Aceita `full_name` ou `fullName`. |
+| `POST`   | `/api/auth/login`    | Público | Autentica e retorna usuário público + JWT.                                        |
+| `PUT`    | `/api/auth/me`       | JWT     | Atualiza nome, e-mail e/ou senha e emite novo JWT.                                |
+| `DELETE` | `/api/auth/me`       | JWT     | Exclui a conta autenticada.                                                       |
+| `GET`    | `/api/health`        | Público | Verifica a aplicação e executa `SELECT NOW()` no PostgreSQL.                      |
 
-| Variável         | Finalidade                                 |
-| ---------------- | ------------------------------------------ |
-| `NODE_ENV`       | Ambiente de execução                       |
-| `PORT`           | Porta HTTP da aplicação                    |
-| `LOG_LEVEL`      | Nível de detalhamento dos logs             |
-| `DB_HOST`        | Endereço do PostgreSQL                     |
-| `DB_PORT`        | Porta do PostgreSQL                        |
-| `DB_NAME`        | Nome do banco                              |
-| `DB_USER`        | Usuário de conexão                         |
-| `DB_PASSWORD`    | Senha de conexão                           |
-| `ML_API_URL`     | Endereço da API Python de Machine Learning |
-| `ML_API_LIMIT`   | Quantidade máxima de registros solicitados à API Python |
-| `ML_REQUEST_TIMEOUT_MS` | Tempo limite das requisições à API Python, em milissegundos |
-| `ML_PREDICTION_CONCURRENCY` | Limite configurável para chamadas individuais de predição |
-| `ML_HISTORY_RETENTION_DAYS` | Número máximo de dias de histórico mantido |
-| `ML_MAX_HISTORY_BATCHES` | Número máximo de lotes de histórico mantidos |
-| `JWT_SECRET`     | Segredo usado para assinar tokens          |
-| `JWT_EXPIRES_IN` | Tempo de expiração dos tokens              |
+### Machine Learning
 
-Os valores dessas variáveis devem ser definidos no ambiente de execução. O arquivo `.env` não deve ser versionado.
+As rotas abaixo ficam sob `/api/ml` e são protegidas por JWT. A maioria funciona como proxy para o mesmo caminho na API Python (`ML_API_URL`). Os parâmetros de query são encaminhados ao serviço de origem; quando uma resposta de erro é recebida, o backend preserva o status e o corpo JSON quando possível.
 
-## Rotas principais
+| Método | Endpoint                                          | Finalidade                                                             |
+| ------ | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| `GET`  | `/api/ml/`                                        | Informações ou resposta raiz da API Python.                            |
+| `GET`  | `/api/ml/health`                                  | Health check do serviço de ML.                                         |
+| `GET`  | `/api/ml/marine-data`                             | Dados ambientais marinhos.                                             |
+| `GET`  | `/api/ml/climatologia?latitude=...&longitude=...` | Climatologia de uma coordenada; latitude e longitude são obrigatórias. |
+| `GET`  | `/api/ml/predictions`                             | Predições do modelo.                                                   |
+| `POST` | `/api/ml/predict`                                 | Executa uma predição individual; recebe um objeto JSON no corpo.       |
+| `GET`  | `/api/ml/forecast`                                | Forecast para uma coordenada.                                          |
+| `GET`  | `/api/ml/forecast/janela`                         | Forecast para uma janela de meses.                                     |
+| `GET`  | `/api/ml/forecast/meta`                           | Metadados do forecast.                                                 |
+| `GET`  | `/api/ml/forecast/regioes`                        | Regiões disponíveis para forecast.                                     |
+| `GET`  | `/api/ml/forecast/mapa`                           | Dados de forecast para visualização em mapa.                           |
+| `GET`  | `/api/ml/coastal-risks`                           | Riscos costeiros retornados pela API Python.                           |
+| `GET`  | `/api/ml/observado`                               | Dados observados, opcionalmente filtrados por mês.                     |
+| `GET`  | `/api/ml/condicoes-ambientais`                    | Condições ambientais por região e janela temporal.                     |
+| `GET`  | `/api/ml/condicoes-propicias`                     | Condições favoráveis por espécie e região.                             |
+| `GET`  | `/api/ml/condicoes-propicias/historico`           | Histórico de condições favoráveis.                                     |
+| `GET`  | `/api/ml/teste/meses`                             | Recurso auxiliar da API Python para teste de meses.                    |
+| `GET`  | `/api/ml/teste/hindcast`                          | Recurso auxiliar de hindcast, com filtros `emissao` e `versao`.        |
 
-- `POST /api/auth/register`: cria um usuário.
-- `POST /api/auth/login`: autentica um usuário e retorna um token.
-- `PUT /api/auth/me`: edita o usuário autenticado.
-- `DELETE /api/auth/me`: exclui o usuário autenticado.
-- `GET /api/health`: verifica a disponibilidade da aplicação e do banco.
-- `GET /api/ml/coastal-risks`: sincroniza, persiste e retorna os riscos costeiros e suas tendências.
+Parâmetros usados com frequência:
 
-As rotas de cadastro e login são públicas. As operações de edição e exclusão
-exigem autenticação.
+- `marine-data`: `limit`.
+- `predictions`: `limit` e `horizon`.
+- `forecast`: `latitude` e `longitude`.
+- `forecast/janela`: `data` e `meses`.
+- `forecast/mapa`: `target_date` e `nivel_minimo` (`BAIXO`, `MODERADO` ou `ALTO`).
+- `observado`: `mes`.
+- `condicoes-ambientais`: `region`, `meses_passados` e `meses`.
+- `condicoes-propicias`: `especie` (`Dinophysis` ou `Pseudo-nitzschia`) e `region` (`Litoral Norte`, `Baixada Santista` ou `Litoral Sul`).
+- `condicoes-propicias/historico`: `meses`.
 
-A rota de riscos aceita filtros opcionais por região, nível de risco e mês. O retorno contém resumo geral, tendências históricas, filtros aplicados, pontos enriquecidos e o indicador `stale`.
+Os parâmetros aceitos podem variar conforme a versão da API Python. O backend repassa os parâmetros da rota proxy e retorna `503` quando o serviço de ML está indisponível. A rota `POST /api/ml/predict` exige um objeto JSON e encaminha as features para `/predict`.
 
-### Resposta de `/api/ml/coastal-risks`
+## Dados de Machine Learning
 
-Os campos `summary` e `data` representam a amostra atual retornada pelo Machine Learning. O campo `trends` é calculado sobre o histórico persistido no PostgreSQL e pode conter mais pontos do que a amostra atual.
+Os dados ambientais e de predição podem ser recebidos em formatos equivalentes pela integração. O serviço reconhece, entre outros:
+
+- coordenadas `latitude`/`longitude` ou aliases equivalentes;
+- período por `year`/`month` ou por data;
+- probabilidade em `probability`, `risk_probability`, `predicted_probability` ou `probabilidade`;
+- risco em `risk_level`, `riskLevel`, `level` ou `risk`;
+- fatores ambientais agrupados em `environmental_factors` ou `environmentalFactors`.
+
+Quando a camada de enriquecimento é utilizada, cada ponto normalizado contém:
 
 ```json
 {
-  "success": true,
-  "summary": {
-    "total_monitored": 0,
-    "high_risk_count": 0,
-    "general_status": "NORMAL"
+  "id": "identificador",
+  "latitude": -23.96,
+  "longitude": -46.33,
+  "region": "Baixada Santista",
+  "year": 2026,
+  "month": 3,
+  "probability": 0.42,
+  "risk_level": "MÉDIO",
+  "environmental_factors": {
+    "temperature_celsius": 24.1,
+    "chlorophyll_mg_m3": 1.8,
+    "salinity_psu": 34.2
   },
-  "trends": [],
-  "filters_applied": {
-    "region": "todas",
-    "risk_level": "todos",
-    "month": "todos"
-  },
-  "stale": false,
-  "data": []
+  "model_version": "v1.0"
 }
 ```
 
-`trends.high_risk_points` conta os pontos históricos classificados como `ALTO` para cada combinação de ano e mês. Portanto, esse valor não deve ser comparado diretamente com `summary.high_risk_count` sem considerar que as fontes podem ter quantidades e lotes diferentes.
+O enriquecimento relaciona predição e dados marinhos por coordenadas, ano e mês. A classificação regional usa `Litoral Norte`, `Baixada Santista` e `Litoral Sul`. O nível de risco é normalizado para `BAIXO`, `MÉDIO` ou `ALTO` quando a camada de normalização é aplicada.
+
+## Persistência e histórico
+
+Na inicialização, o backend cria de forma idempotente as tabelas:
+
+- `users`: dados públicos do usuário e hash da senha.
+- `prediction_batches`: lote, origem, versão do modelo, hash da fonte e data de criação.
+- `predictions`: coordenadas, período, região, probabilidade, risco, fatores ambientais, versão do modelo e relação com o lote.
+
+A persistência de predições usa transação PostgreSQL e hash SHA-256 do conteúdo normalizado para evitar duplicação do mesmo lote. Há índices para período, risco, região, lote e data de criação. O histórico pode ser limpo conforme `ML_HISTORY_RETENTION_DAYS` e `ML_MAX_HISTORY_BATCHES`.
+
+## Cache, timeout e integração com ML
+
+- `ML_API_URL` define a base da API Python.
+- Consultas GET sem cabeçalho encaminhado podem ser armazenadas em cache em memória durante `ML_CACHE_TTL_MS`.
+- O tempo máximo de uma chamada à API Python é `ML_REQUEST_TIMEOUT_MS`.
+- Chamadas autenticadas não são reutilizadas do cache.
+- `ML_PREDICTION_CONCURRENCY` limita chamadas simultâneas quando o pipeline de predição individual é utilizado.
+- Falhas de rede, timeout ou indisponibilidade retornam uma resposta controlada com status `503` nas rotas proxy.
+
+## Configuração
+
+Todas as variáveis possuem defaults no código, mas os valores de produção devem ser fornecidos pelo ambiente. Não versione arquivos `.env` com segredos reais.
+
+| Variável                    | Finalidade                             | Default                                           |
+| --------------------------- | -------------------------------------- | ------------------------------------------------- |
+| `NODE_ENV`                  | Ambiente e formato dos logs            | `development`                                     |
+| `PORT`                      | Porta HTTP                             | `3000`                                            |
+| `LOG_LEVEL`                 | Nível do logger Pino                   | `info`                                            |
+| `DB_HOST`                   | Host PostgreSQL                        | `localhost`                                       |
+| `DB_PORT`                   | Porta PostgreSQL                       | `5432`                                            |
+| `DB_NAME`                   | Nome do banco                          | `algamar`                                         |
+| `DB_USER`                   | Usuário PostgreSQL                     | `postgres`                                        |
+| `DB_PASSWORD`               | Senha PostgreSQL                       | default de desenvolvimento                        |
+| `DB_POOL_MAX`               | Máximo de conexões do pool             | `5`                                               |
+| `ML_API_URL`                | URL base da API Python                 | `http://127.0.0.1:8000`                           |
+| `ML_API_LIMIT`              | Limite usado na sincronização de dados | `100`                                             |
+| `ML_REQUEST_TIMEOUT_MS`     | Timeout das requisições ao ML          | `10000`                                           |
+| `ML_CACHE_TTL_MS`           | TTL do cache GET em milissegundos      | `300000`                                          |
+| `ML_PREDICTION_CONCURRENCY` | Concorrência de predições individuais  | `5`                                               |
+| `ML_HISTORY_RETENTION_DAYS` | Retenção temporal do histórico         | `90`                                              |
+| `ML_MAX_HISTORY_BATCHES`    | Número máximo de lotes mantidos        | `1000`                                            |
+| `JWT_SECRET`                | Segredo de assinatura dos tokens       | default de desenvolvimento; substitua em produção |
+| `JWT_EXPIRES_IN`            | Expiração do JWT                       | `1d`                                              |
+
+## Execução local
+
+Instale as dependências e configure o PostgreSQL e a API Python conforme as variáveis de ambiente:
+
+```bash
+npm install
+npm run dev
+```
+
+Para produção, o fluxo previsto é compilar TypeScript e iniciar `dist/server.js`. A aplicação testa a conexão com o banco e cria as tabelas antes de abrir a porta HTTP.
 
 ## Tecnologias
 
-- Node.js
-- TypeScript
-- Express
-- PostgreSQL
-- `pg`
-- bcrypt
-- JWT
-- Pino
+- Node.js e TypeScript
+- Express 5
+- PostgreSQL e `pg`
+- JWT e `jsonwebtoken`
+- bcryptjs
+- Pino e `pino-pretty`
+- CORS
 
 ## Princípios de dados
 
-O backend deve trabalhar com dados provenientes de fontes reais e identificáveis. A API Python é a origem das predições e dos dados ambientais; o backend é responsável por validar, relacionar, persistir e disponibilizar essas informações sem substituir o processamento científico do modelo.
-
-A estrutura do banco deve evoluir conforme novos dados reais e novas necessidades de análise forem validados pela equipe do projeto.
+A API Python é a fonte das predições e dos dados ambientais. O backend deve validar, encaminhar, normalizar, enriquecer e persistir esses dados sem substituir o processamento científico do modelo. Valores, versões de modelo e indicadores exibidos aos consumidores devem permanecer rastreáveis à fonte de Machine Learning.
